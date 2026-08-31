@@ -5,7 +5,7 @@ const { URL } = require('url');
 const port = process.env.PORT || 8080;
 const wss = new WebSocket.Server({ port });
 
-console.log(`Progressive Streaming Proxy active on port ${port}`);
+console.log(`Universal Progressive Asset Streaming Proxy active on port ${port}`);
 
 async function getAsBase64(targetUrl) {
     try {
@@ -19,7 +19,7 @@ async function getAsBase64(targetUrl) {
 async function getAsText(targetUrl) {
     try {
         const response = await axios.get(targetUrl);
-        return response.data;
+        return typeof response.data === 'object' ? JSON.stringify(response.data) : response.data;
     } catch (e) { return ''; }
 }
 
@@ -28,14 +28,14 @@ wss.on('connection', (ws) => {
         try {
             const data = JSON.parse(message);
             if (data.type === 'FETCH') {
-                console.log(`Streaming initial page shell for: ${data.url}`);
+                console.log(`Streaming core HTML/CSS for: ${data.url}`);
                 
-                // 1. STAGE 1: Grab the core HTML immediately
+                // STAGE 1: Core Layout HTML Fetching
                 const response = await axios.get(data.url);
                 let html = response.data;
                 const baseUrl = data.url;
 
-                // 2. STAGE 2: Instantly find and inline CSS so layout renders correctly
+                // Inline All External Stylesheets (.css)
                 const cssRegex = /<link[^>]+(?:rel=["']stylesheet["']|href=["'][^"']+\.css[^"']*["'])[^>]*>/g;
                 const hrefExtractRegex = /href=["']([^"']+)["']/;
                 let cssMatches = html.match(cssRegex) || [];
@@ -43,50 +43,60 @@ wss.on('connection', (ws) => {
                 for (const matchTag of cssMatches) {
                     const hrefMatch = matchTag.match(hrefExtractRegex);
                     if (hrefMatch) {
-                        const originalHref = hrefMatch[1];
                         try {
-                            const absoluteUrl = new URL(originalHref, baseUrl).href;
+                            const absoluteUrl = new URL(hrefMatch[1], baseUrl).href;
                             const cssText = await getAsText(absoluteUrl);
-                            html = html.replace(matchTag, `<style data-origin="${originalHref}">${cssText}</style>`);
+                            html = html.replace(matchTag, `<style data-origin="${hrefMatch[1]}">${cssText}</style>`);
                         } catch (err) {}
                     }
                 }
 
-                // Send the layout structure right now so the user see the page instantly
+                // Dispatch core layout instantly so the browser screen renders layout immediately
                 ws.send(JSON.stringify({
                     type: 'STAGE_1_LAYOUT',
                     url: data.url,
                     html: html
                 }));
 
-                // 3. STAGE 3: Heavy lifting assets stream in the background
-                console.log(`Background compiling assets for: ${data.url}`);
+                // STAGE 2: Compile Background Scripts (.js) and Images (.png, .jpg, etc)
+                console.log(`Compiling background logic blocks & multimedia for: ${data.url}`);
+                
+                // Process scripts
+                const scriptRegex = /<script[^>]+src=["']([^"']+)["'][^>]*>\s*<\/script>/g;
+                let scriptMatch;
+                let scriptMap = {};
+                while ((scriptMatch = scriptRegex.exec(html)) !== null) {
+                    try {
+                        const absoluteUrl = new URL(scriptMatch[1], baseUrl).href;
+                        const jsText = await getAsText(absoluteUrl);
+                        scriptMap[scriptMatch[0]] = `<script data-origin="${scriptMatch[1]}">${jsText}</script>`;
+                    } catch (e) {}
+                }
+
+                // Process multimedia assets
                 const imgRegex = /<img[^>]+src=["']([^"']+)["']/g;
                 let imgMatch;
                 let imageMap = {};
-
                 while ((imgMatch = imgRegex.exec(html)) !== null) {
-                    const originalSrc = imgMatch[1];
                     try {
-                        const absoluteUrl = new URL(originalSrc, baseUrl).href;
+                        const absoluteUrl = new URL(imgMatch[1], baseUrl).href;
                         const dataUrl = await getAsBase64(absoluteUrl);
-                        if (dataUrl) {
-                            imageMap[originalSrc] = dataUrl;
-                        }
+                        if (dataUrl) imageMap[imgMatch[1]] = dataUrl;
                     } catch (err) {}
                 }
 
-                // Send the collected images as a separate asset bundle chunk
+                // Stream the completed javascript bundle and asset maps downstream
                 ws.send(JSON.stringify({
                     type: 'STAGE_2_ASSETS',
                     url: data.url,
+                    scripts: scriptMap,
                     images: imageMap
                 }));
                 
-                console.log(`Stream complete for ${data.url}`);
+                console.log(`Finished comprehensive background compilation for ${data.url}`);
             }
         } catch (err) {
-            ws.send(JSON.stringify({ type: 'ERROR', message: 'Streaming engine encountered a source block.' }));
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Asset streaming error.' }));
         }
     });
 });
