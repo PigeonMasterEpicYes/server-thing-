@@ -31,37 +31,44 @@ wss.on('connection', (ws) => {
                 console.log(`Streaming core HTML/CSS for: ${data.url}`);
                 
                 // STAGE 1: Core Layout HTML Fetching
-                const response = await axios.get(data.url);
+                const response = await axios.get(data.url, {
+                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+                });
                 let html = response.data;
                 const baseUrl = data.url;
 
                 // Inline All External Stylesheets (.css)
-                const cssRegex = /<link[^>]+(?:rel=["']stylesheet["']|href=["'][^"']+\.css[^"']*["'])[^>]*>/g;
+                const cssRegex = /<link[^>]+(?:rel=["']stylesheet["']|href=["']([^"']+\.css[^"']*)["'])[^>]*>/g;
+                let cssMatch;
+                // Use a secondary regex to cleanly grab href if the global capture is tricky
                 const hrefExtractRegex = /href=["']([^"']+)["']/;
-                let cssMatches = html.match(cssRegex) || [];
                 
+                let cssMatches = html.match(/<link[^>]+>/g) || [];
                 for (const matchTag of cssMatches) {
-                    const hrefMatch = matchTag.match(hrefExtractRegex);
-                    if (hrefMatch) {
-                        try {
-                            const absoluteUrl = new URL(hrefMatch[1], baseUrl).href;
-                            const cssText = await getAsText(absoluteUrl);
-                            html = html.replace(matchTag, `<style data-origin="${hrefMatch[1]}">${cssText}</style>`);
-                        } catch (err) {}
+                    if (matchTag.includes('stylesheet') || matchTag.includes('.css')) {
+                        const hrefMatch = matchTag.match(hrefExtractRegex);
+                        if (hrefMatch && hrefMatch[1]) {
+                            try {
+                                const absoluteUrl = new URL(hrefMatch[1], baseUrl).href;
+                                const cssText = await getAsText(absoluteUrl);
+                                // Using a lambda function wrapper prevents special character string injection bugs
+                                html = html.replace(matchTag, () => `<style data-origin="${hrefMatch[1]}">${cssText}</style>`);
+                            } catch (err) {}
+                        }
                     }
                 }
 
-                // Dispatch core layout instantly so the browser screen renders layout immediately
+                // Dispatch layout layer immediately
                 ws.send(JSON.stringify({
                     type: 'STAGE_1_LAYOUT',
                     url: data.url,
                     html: html
                 }));
 
-                // STAGE 2: Compile Background Scripts (.js) and Images (.png, .jpg, etc)
+                // STAGE 2: Compile Background Scripts and Media Asset Maps
                 console.log(`Compiling background logic blocks & multimedia for: ${data.url}`);
                 
-                // Process scripts
+                // Process scripts safely using explicit index string keys
                 const scriptRegex = /<script[^>]+src=["']([^"']+)["'][^>]*>\s*<\/script>/g;
                 let scriptMatch;
                 let scriptMap = {};
@@ -73,7 +80,7 @@ wss.on('connection', (ws) => {
                     } catch (e) {}
                 }
 
-                // Process multimedia assets
+                // Process multimedia assets safely using explicit index string keys
                 const imgRegex = /<img[^>]+src=["']([^"']+)["']/g;
                 let imgMatch;
                 let imageMap = {};
@@ -81,11 +88,11 @@ wss.on('connection', (ws) => {
                     try {
                         const absoluteUrl = new URL(imgMatch[1], baseUrl).href;
                         const dataUrl = await getAsBase64(absoluteUrl);
-                        if (dataUrl) imageMap[imgMatch[1]] = dataUrl;
+                        if (dataUrl) imageMap[imgMatch[0]] = dataUrl;
                     } catch (err) {}
                 }
 
-                // Stream the completed javascript bundle and asset maps downstream
+                // Stream asset data bundles downstream
                 ws.send(JSON.stringify({
                     type: 'STAGE_2_ASSETS',
                     url: data.url,
