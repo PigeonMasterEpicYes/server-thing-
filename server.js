@@ -38,11 +38,7 @@ wss.on('connection', (ws) => {
                 const baseUrl = data.url;
 
                 // Inline All External Stylesheets (.css)
-                const cssRegex = /<link[^>]+(?:rel=["']stylesheet["']|href=["']([^"']+\.css[^"']*)["'])[^>]*>/g;
-                let cssMatch;
-                // Use a secondary regex to cleanly grab href if the global capture is tricky
                 const hrefExtractRegex = /href=["']([^"']+)["']/;
-                
                 let cssMatches = html.match(/<link[^>]+>/g) || [];
                 for (const matchTag of cssMatches) {
                     if (matchTag.includes('stylesheet') || matchTag.includes('.css')) {
@@ -51,14 +47,13 @@ wss.on('connection', (ws) => {
                             try {
                                 const absoluteUrl = new URL(hrefMatch[1], baseUrl).href;
                                 const cssText = await getAsText(absoluteUrl);
-                                // Using a lambda function wrapper prevents special character string injection bugs
                                 html = html.replace(matchTag, () => `<style data-origin="${hrefMatch[1]}">${cssText}</style>`);
                             } catch (err) {}
                         }
                     }
                 }
 
-                // Dispatch layout layer immediately
+                // Dispatch core layout instantly
                 ws.send(JSON.stringify({
                     type: 'STAGE_1_LAYOUT',
                     url: data.url,
@@ -68,7 +63,7 @@ wss.on('connection', (ws) => {
                 // STAGE 2: Compile Background Scripts and Media Asset Maps
                 console.log(`Compiling background logic blocks & multimedia for: ${data.url}`);
                 
-                // Process scripts safely using explicit index string keys
+                // Process scripts safely using explicit key matching
                 const scriptRegex = /<script[^>]+src=["']([^"']+)["'][^>]*>\s*<\/script>/g;
                 let scriptMatch;
                 let scriptMap = {};
@@ -80,15 +75,23 @@ wss.on('connection', (ws) => {
                     } catch (e) {}
                 }
 
-                // Process multimedia assets safely using explicit index string keys
-                const imgRegex = /<img[^>]+src=["']([^"']+)["']/g;
+                // FIXED IMAGE PARSER: Capture src="...", data-src="...", etc., without breaking parent quotes
+                const imageTargetRegex = /(src|data-src|href)=["']([^"']+\.(?:png|jpg|jpeg|gif|svg|webp)[^"']*)["']/gi;
                 let imgMatch;
                 let imageMap = {};
-                while ((imgMatch = imgRegex.exec(html)) !== null) {
+                
+                while ((imgMatch = imageTargetRegex.exec(html)) !== null) {
+                    const fullAttributeString = imgMatch[0]; // e.g., src="logo.png"
+                    const attributeName = imgMatch[1];       // e.g., src
+                    const rawAssetUrl = imgMatch[2];         // e.g., logo.png
+                    
                     try {
-                        const absoluteUrl = new URL(imgMatch[1], baseUrl).href;
+                        const absoluteUrl = new URL(rawAssetUrl, baseUrl).href;
                         const dataUrl = await getAsBase64(absoluteUrl);
-                        if (dataUrl) imageMap[imgMatch[0]] = dataUrl;
+                        if (dataUrl) {
+                            // Map the entire full attribute context tag safely
+                            imageMap[fullAttributeString] = `${attributeName}="${dataUrl}"`;
+                        }
                     } catch (err) {}
                 }
 
