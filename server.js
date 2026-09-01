@@ -12,7 +12,7 @@ async function getAsBase64(targetUrl) {
         const response = await axios.get(targetUrl, { responseType: 'arraybuffer' });
         const contentType = response.headers['content-type'];
         const base64 = Buffer.from(response.data, 'binary').toString('base64');
-        return `data:${contentType};base64,${base64}`;
+        return `data:${contentType};base64,base64`;
     } catch (e) { return null; }
 }
 
@@ -43,11 +43,11 @@ wss.on('connection', (ws) => {
                 for (const matchTag of cssMatches) {
                     if (matchTag.includes('stylesheet') || matchTag.includes('.css')) {
                         const hrefMatch = matchTag.match(hrefExtractRegex);
-                        if (hrefMatch && hrefMatch[1]) {
+                        if (hrefMatch && hrefMatch) {
                             try {
-                                const absoluteUrl = new URL(hrefMatch[1], baseUrl).href;
+                                const absoluteUrl = new URL(hrefMatch, baseUrl).href;
                                 const cssText = await getAsText(absoluteUrl);
-                                html = html.replace(matchTag, () => `<style data-origin="${hrefMatch[1]}">${cssText}</style>`);
+                                html = html.replace(matchTag, () => `<style data-origin="${hrefMatch}">${cssText}</style>`);
                             } catch (err) {}
                         }
                     }
@@ -60,8 +60,8 @@ wss.on('connection', (ws) => {
                     html: html
                 }));
 
-                // STAGE 2: Compile Background Scripts and Media Asset Maps
-                console.log(`Compiling background logic blocks & multimedia for: ${data.url}`);
+                // STAGE 2: Compile Background Scripts, Data Configurations, and Multimedia
+                console.log(`Compiling expanded data payloads & multimedia for: ${data.url}`);
                 
                 // Process scripts safely using explicit key matching
                 const scriptRegex = /<script[^>]+src=["']([^"']+)["'][^>]*>\s*<\/script>/g;
@@ -69,41 +69,51 @@ wss.on('connection', (ws) => {
                 let scriptMap = {};
                 while ((scriptMatch = scriptRegex.exec(html)) !== null) {
                     try {
-                        const absoluteUrl = new URL(scriptMatch[1], baseUrl).href;
+                        const absoluteUrl = new URL(scriptMatch, baseUrl).href;
                         const jsText = await getAsText(absoluteUrl);
-                        scriptMap[scriptMatch[0]] = `<script data-origin="${scriptMatch[1]}">${jsText}</script>`;
+                        scriptMap[scriptMatch] = `<script data-origin="${scriptMatch}">${jsText}</script>`;
                     } catch (e) {}
                 }
 
-                // FIXED IMAGE PARSER: Capture src="...", data-src="...", etc., without breaking parent quotes
-                const imageTargetRegex = /(src|data-src|href)=["']([^"']+\.(?:png|jpg|jpeg|gif|svg|webp)[^"']*)["']/gi;
-                let imgMatch;
-                let imageMap = {};
+                // EXPANDED TARGETS: Capture src/href attributes ending in .png, .jpg, .jpeg, .gif, .svg, .webp, or .json
+                const assetTargetRegex = /(src|data-src|href)=["']([^"']+\.(?:png|jpg|jpeg|gif|svg|webp|json)[^"']*)["']/gi;
+                let assetMatch;
+                let assetMap = {};
                 
-                while ((imgMatch = imageTargetRegex.exec(html)) !== null) {
-                    const fullAttributeString = imgMatch[0]; // e.g., src="logo.png"
-                    const attributeName = imgMatch[1];       // e.g., src
-                    const rawAssetUrl = imgMatch[2];         // e.g., logo.png
+                while ((assetMatch = assetTargetRegex.exec(html)) !== null) {
+                    const fullAttributeString = assetMatch; 
+                    const attributeName = assetMatch;       
+                    const rawAssetUrl = assetMatch;         
                     
                     try {
                         const absoluteUrl = new URL(rawAssetUrl, baseUrl).href;
-                        const dataUrl = await getAsBase64(absoluteUrl);
-                        if (dataUrl) {
-                            // Map the entire full attribute context tag safely
-                            imageMap[fullAttributeString] = `${attributeName}="${dataUrl}"`;
+                        
+                        // Handle data JSON architectures as raw text injection templates
+                        if (rawAssetUrl.toLowerCase().includes('.json')) {
+                            const jsonText = await getAsText(absoluteUrl);
+                            if (jsonText) {
+                                // Inject raw data configurations into inline template blocks
+                                assetMap[fullAttributeString] = `data-json-payload="${absoluteUrl}" data-raw-string="${encodeURIComponent(jsonText)}"`;
+                            }
+                        } else {
+                            // Handle standard images, vectors (.svg), and raster matrices (.webp) via Base64 binary packets
+                            const dataUrl = await getAsBase64(absoluteUrl);
+                            if (dataUrl) {
+                                assetMap[fullAttributeString] = `${attributeName}="${dataUrl}"`;
+                            }
                         }
                     } catch (err) {}
                 }
 
-                // Stream asset data bundles downstream
+                // Stream expanded asset data bundles downstream
                 ws.send(JSON.stringify({
                     type: 'STAGE_2_ASSETS',
                     url: data.url,
                     scripts: scriptMap,
-                    images: imageMap
+                    images: assetMap
                 }));
                 
-                console.log(`Finished comprehensive background compilation for ${data.url}`);
+                console.log(`Finished comprehensive multi-asset compilation for ${data.url}`);
             }
         } catch (err) {
             ws.send(JSON.stringify({ type: 'ERROR', message: 'Asset streaming error.' }));
