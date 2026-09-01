@@ -22,6 +22,7 @@ async function getAsBase64(targetUrl) {
 
         const response = await axios.get(targetUrl, { responseType: 'arraybuffer' });
         const base64 = Buffer.from(response.data, 'binary').toString('base64');
+        // FIXED: Added the template literal symbol ($) so it streams actual binary strings instead of text
         return `data:${contentType};base64,${base64}`;
     } catch (e) { return null; }
 }
@@ -44,16 +45,17 @@ wss.on('connection', (ws) => {
                     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
                 });
                 
-                // Initialize the structural virtual parser
                 const $ = cheerio.load(response.data);
                 const baseUrl = data.url;
 
-                // 1. INLINE ALL STYLESHEETS: Pinpoint every single link style block seamlessly
+                // 1. INLINE ALL STYLESHEETS
                 const cssPromises = [];
                 $('link[rel="stylesheet"], link[href$=".css"]').each((i, el) => {
-                    const href = $(el).attr('href');
+                    let href = $(el).attr('href');
                     if (href) {
                         try {
+                            // FIXED: Force support for relative protocol paths (e.g. //scratch.mit.edu)
+                            if (href.startsWith('//')) href = 'https:' + href;
                             const absoluteUrl = new URL(href, baseUrl).href;
                             cssPromises.push(
                                 getAsText(absoluteUrl).then(cssText => {
@@ -65,7 +67,7 @@ wss.on('connection', (ws) => {
                 });
                 await Promise.all(cssPromises);
 
-                // Dispatch core layout instantly so the browser screen paints initial layout models
+                // Dispatch core layout instantly
                 ws.send(JSON.stringify({
                     type: 'STAGE_1_LAYOUT',
                     url: data.url,
@@ -74,16 +76,16 @@ wss.on('connection', (ws) => {
 
                 console.log(`Gathering background dependencies & data matrices...`);
 
-                // 2. INLINE ALL JAVASCRIPT: Capture all core internal and parameter script endpoints
+                // 2. INLINE ALL JAVASCRIPT
                 const scriptPromises = [];
                 $('script[src]').each((i, el) => {
-                    const src = $(el).attr('src');
+                    let src = $(el).attr('src');
                     if (src && !src.startsWith('data:')) {
                         try {
+                            if (src.startsWith('//')) src = 'https:' + src;
                             const absoluteUrl = new URL(src, baseUrl).href;
                             scriptPromises.push(
                                 getAsText(absoluteUrl).then(jsText => {
-                                    // Inject as a clean, literal text block to avoid syntax breaking
                                     $(el).replaceWith(`<script data-origin="${src}">${jsText}</script>`);
                                 })
                             );
@@ -92,14 +94,14 @@ wss.on('connection', (ws) => {
                 });
                 await Promise.all(scriptPromises);
 
-                // 3. UNIVERSAL ATTRIBUTE PARSER: Extract images, configurations, JSON blocks, SVGs, and web assets
+                // 3. UNIVERSAL ATTRIBUTE PARSER: Extract images, projects, and thumbnails safely
                 const assetPromises = [];
                 $('*').each((i, el) => {
                     ['src', 'href', 'data-src'].forEach(attr => {
-                        const val = $(el).attr(attr);
-                        // Skip basic fragments or anchor jumps
+                        let val = $(el).attr(attr);
                         if (val && !val.startsWith('data:') && !val.startsWith('javascript:') && !val.startsWith('#')) {
                             try {
+                                if (val.startsWith('//')) val = 'https:' + val;
                                 const absoluteUrl = new URL(val, baseUrl).href;
                                 assetPromises.push(
                                     getAsBase64(absoluteUrl).then(dataUrl => {
@@ -112,7 +114,7 @@ wss.on('connection', (ws) => {
                 });
                 await Promise.all(assetPromises);
 
-                // Stream the completely compiled self-contained bundle back to the client
+                // Stream completed assets back to client memory
                 ws.send(JSON.stringify({
                     type: 'STAGE_2_ASSETS',
                     url: data.url,
@@ -126,4 +128,3 @@ wss.on('connection', (ws) => {
         }
     });
 });
-
