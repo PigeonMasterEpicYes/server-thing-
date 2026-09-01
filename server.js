@@ -5,12 +5,13 @@ const { URL } = require('url');
 const port = process.env.PORT || 8080;
 const wss = new WebSocket.Server({ port });
 
-console.log(`Universal Progressive Asset Streaming Proxy active on port ${port}`);
+console.log(`Universal All-Asset Streaming Proxy active on port ${port}`);
 
+// Downloads any file type and converts it into a universally readable Base64 Data URL
 async function getAsBase64(targetUrl) {
     try {
         const response = await axios.get(targetUrl, { responseType: 'arraybuffer' });
-        const contentType = response.headers['content-type'];
+        const contentType = response.headers['content-type'] || 'application/octet-stream';
         const base64 = Buffer.from(response.data, 'binary').toString('base64');
         return `data:${contentType};base64,${base64}`;
     } catch (e) { return null; }
@@ -28,16 +29,16 @@ wss.on('connection', (ws) => {
         try {
             const data = JSON.parse(message);
             if (data.type === 'FETCH') {
-                console.log(`Streaming core HTML/CSS for: ${data.url}`);
+                console.log(`Streaming universal page core for: ${data.url}`);
                 
-                // STAGE 1: Core Layout HTML Fetching
+                // Fetch the main HTML file
                 const response = await axios.get(data.url, {
                     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
                 });
                 let html = response.data;
                 const baseUrl = data.url;
 
-                // Inline All External Stylesheets (.css) safely
+                // 1. Inline all Link Stylesheets (.css) safely
                 const hrefExtractRegex = /href=["']([^"']+)["']/;
                 let cssMatches = html.match(/<link[^>]+>/g) || [];
                 for (const matchTag of cssMatches) {
@@ -53,17 +54,16 @@ wss.on('connection', (ws) => {
                     }
                 }
 
-                // Dispatch core layout instantly so the browser frame maps initial frameworks
+                // Send the structural layout immediately so the page displays instantly
                 ws.send(JSON.stringify({
                     type: 'STAGE_1_LAYOUT',
                     url: data.url,
                     html: html
                 }));
 
-                // STAGE 2: Compile Background Scripts, Data Configurations, and Multimedia
-                console.log(`Compiling expanded data payloads & multimedia for: ${data.url}`);
+                console.log(`Deep extracting all nested assets for: ${data.url}`);
                 
-                // FIXED SCRIPT PARSER: Only targets strict external file endpoints to avoid breaking inline Google config blocks
+                // 2. Fetch external script files (.js)
                 const scriptRegex = /<script[^>]+src=["']([^"']+\.js[^"']*)["'][^>]*>\s*<\/script>/gi;
                 let scriptMatch;
                 let scriptMap = {};
@@ -75,34 +75,31 @@ wss.on('connection', (ws) => {
                     } catch (e) {}
                 }
 
-                // Capture standard asset attributes safely without altering parent boundaries
-                const assetTargetRegex = /(src|data-src|href)=["']([^"']+\.(?:png|jpg|jpeg|gif|svg|webp|json)[^"']*)["']/gi;
+                // 3. UNIVERSAL PARSER: Capture ANY src, data-src, or href attribute regardless of file extension
+                // This targets videos, sounds, json, fonts, svg, pdfs, zips, or any unknown file types
+                const universalAssetRegex = /(src|data-src|href)=["']([^"':#][^"']*)["']/gi;
                 let assetMatch;
                 let assetMap = {};
                 
-                while ((assetMatch = assetTargetRegex.exec(html)) !== null) {
-                    const fullAttributeString = assetMatch[0]; 
-                    const attributeName = assetMatch[1];       
-                    const rawAssetUrl = assetMatch[2];         
+                while ((assetMatch = universalAssetRegex.exec(html)) !== null) {
+                    const fullAttributeString = assetMatch[0]; // e.g., src="music.mp3"
+                    const attributeName = assetMatch[1];       // e.g., src
+                    const rawAssetUrl = assetMatch[2];         // e.g., music.mp3
                     
+                    // Skip basic fragment identifiers or inline scripts
+                    if (rawAssetUrl.startsWith('javascript:') || rawAssetUrl.startsWith('data:')) continue;
+
                     try {
                         const absoluteUrl = new URL(rawAssetUrl, baseUrl).href;
-                        
-                        if (rawAssetUrl.toLowerCase().includes('.json')) {
-                            const jsonText = await getAsText(absoluteUrl);
-                            if (jsonText) {
-                                assetMap[fullAttributeString] = `data-json-payload="${absoluteUrl}" data-raw-string="${encodeURIComponent(jsonText)}"`;
-                            }
-                        } else {
-                            const dataUrl = await getAsBase64(absoluteUrl);
-                            if (dataUrl) {
-                                assetMap[fullAttributeString] = `${attributeName}="${dataUrl}"`;
-                            }
+                        const dataUrl = await getAsBase64(absoluteUrl);
+                        if (dataUrl) {
+                            // Turn the original asset attribute into a universal inline text stream binary
+                            assetMap[fullAttributeString] = `${attributeName}="${dataUrl}"`;
                         }
                     } catch (err) {}
                 }
 
-                // Stream asset maps downstream
+                // Stream all bundled scripts and universal binary blocks downstream
                 ws.send(JSON.stringify({
                     type: 'STAGE_2_ASSETS',
                     url: data.url,
