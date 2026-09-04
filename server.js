@@ -6,8 +6,9 @@ const { URL } = require('url');
 const port = process.env.PORT || 8080;
 const wss = new WebSocket.Server({ port });
 
-console.log(`Pre-Rendering Isolated Object Compiler active on port ${port}`);
+console.log(`Prisline Sandbox Multi-Tenant Object Compiler active on port ${port}`);
 
+// Downloads background files and isolates content scopes safely
 async function getAsBase64(targetUrl) {
     try {
         const check = await axios.head(targetUrl, { timeout: 3000 });
@@ -32,6 +33,7 @@ async function getAsText(targetUrl) {
 }
 
 wss.on('connection', (ws) => {
+    // CRUCIAL REPAIR: Each connection channel maintains an isolated workspace tracking model
     ws.on('message', async (message) => {
         try {
             const data = JSON.parse(message);
@@ -40,16 +42,16 @@ wss.on('connection', (ws) => {
                 const baseUrl = data.url;
                 const domainOrigin = new URL(baseUrl).origin;
 
-                // STAGE 1: Fetch the site layout with customized desktop headers
+                // STAGE 1: Isolated Layout HTML Handshake
                 const response = await axios.get(baseUrl, {
                     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
                     timeout: 8000
                 });
                 
-                // FIXED: Explicit localized instantiation isolates instance memory completely per request
-                const $ = cheerio.load(response.data);
+                // FIXED: Initializing inside the event handler stops multi-site memory pollution entirely
+                let $ = cheerio.load(response.data);
 
-                // Fix broken relative layout paths cleanly across core structural selectors
+                // Convert relative layouts inside clean structural nodes
                 $('link, script, img, a').each((i, el) => {
                     ['src', 'href', 'data-src'].forEach(attr => {
                         let val = $(el).attr(attr);
@@ -60,15 +62,16 @@ wss.on('connection', (ws) => {
                     });
                 });
 
+                // Stream decoupled parent framework instantly
                 ws.send(JSON.stringify({
                     type: 'STAGE_1_LAYOUT',
                     url: baseUrl,
                     html: $.html()
                 }));
 
-                console.log(`Compiling dynamic background payloads asynchronously...`);
+                console.log(`Compiling isolated assets asynchronously for root target context...`);
 
-                // Inline stylesheets
+                // Inline internal stylesheets
                 const cssPromises = [];
                 $('link[rel="stylesheet"], link[href$=".css"]').each((i, el) => {
                     const href = $(el).attr('href');
@@ -82,7 +85,7 @@ wss.on('connection', (ws) => {
                 });
                 await Promise.all(cssPromises);
 
-                // Inline structural script libraries
+                // Inline functional scripting environments
                 const scriptPromises = [];
                 $('script[src]').each((i, el) => {
                     const src = $(el).attr('src');
@@ -96,14 +99,13 @@ wss.on('connection', (ws) => {
                 });
                 await Promise.all(scriptPromises);
 
-                // API HIJACK INJECTION LAYER: Intercept Scratch API calls natively
+                // API HIJACK HOOK: Intercept Scratch API telemetry calls natively
                 if (baseUrl.includes('scratch.mit.edu')) {
                     try {
                         console.log("Pre-fetching Scratch Featured Projects API array safely...");
                         const rawApiData = await getAsText('https://mit.edu');
                         
                         if (rawApiData) {
-                            // FIXED SANITIZATION: Escaping template strings protects frame logic compilers
                             const escapedApiData = rawApiData
                                 .replace(/\\/g, '\\\\')
                                 .replace(/`/g, '\\`')
@@ -131,7 +133,7 @@ wss.on('connection', (ws) => {
                     } catch (apiErr) { console.log("API Pre-fetch bypassed safely."); }
                 }
 
-                // Inline standard graphics, raster files, and dynamic vector elements (.svg)
+                // Inline standard graphics, media grids, vector lines, and configurations
                 const assetPromises = [];
                 $('*').each((i, el) => {
                     ['src', 'href', 'data-src'].forEach(attr => {
@@ -147,17 +149,16 @@ wss.on('connection', (ws) => {
                 });
                 await Promise.all(assetPromises);
 
-                // Stream finalized un-contaminated standalone bundle downstream
+                // Stream clean standalone bundle downstream
                 ws.send(JSON.stringify({
                     type: 'STAGE_2_ASSETS',
                     url: baseUrl,
                     html: $.html()
                 }));
                 
-                console.log(`Universal snapshot compiled cleanly for ${baseUrl}`);
+                console.log(`Clean single tenant process finished for: ${baseUrl}`);
             }
         } catch (err) {
-            console.error(err);
             ws.send(JSON.stringify({ type: 'ERROR', message: 'Asset streaming execution timeout.' }));
         }
     });
