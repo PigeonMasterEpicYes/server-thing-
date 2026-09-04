@@ -6,23 +6,20 @@ const { URL } = require('url');
 const port = process.env.PORT || 8080;
 const wss = new WebSocket.Server({ port });
 
-console.log(`Cheerio-Powered Multi-Asset Proxy Engine active on port ${port}`);
+console.log(`Pre-Rendering Object Compiler active on port ${port}`);
 
-// Downloads any background file type and packs it into a safe inline Data URL
 async function getAsBase64(targetUrl) {
     try {
         const check = await axios.head(targetUrl);
         const contentType = check.headers['content-type'] || '';
         const contentLength = parseInt(check.headers['content-length'] || '0', 10);
 
-        // Skip massive media formats over 6MB that choke browser rendering threads
         if (contentType.includes('video') || contentType.includes('audio') || contentLength > 6000000) {
             return null;
         }
 
         const response = await axios.get(targetUrl, { responseType: 'arraybuffer' });
         const base64 = Buffer.from(response.data, 'binary').toString('base64');
-        // FIXED: Added the template literal symbol ($) so it streams actual binary strings instead of text
         return `data:${contentType};base64,${base64}`;
     } catch (e) { return null; }
 }
@@ -39,92 +36,115 @@ wss.on('connection', (ws) => {
         try {
             const data = JSON.parse(message);
             if (data.type === 'FETCH') {
-                console.log(`Compiling structural tree framework for: ${data.url}`);
-                
-                const response = await axios.get(data.url, {
+                console.log(`Pre-rendering tree nodes for: ${data.url}`);
+                const baseUrl = data.url;
+                const domainOrigin = new URL(baseUrl).origin;
+
+                // 1. STAGE 1: Fetch the site layout
+                const response = await axios.get(baseUrl, {
                     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
                 });
                 
-                const $ = cheerio.load(response.data);
-                const baseUrl = data.url;
+                let $ = cheerio.load(response.data);
 
-                // 1. INLINE ALL STYLESHEETS
+                // FIX 1: Fix broken root paths before sending layout downstream
+                $('link, script, img, a').each((i, el) => {
+                    ['src', 'href', 'data-src'].forEach(attr => {
+                        let val = $(el).attr(attr);
+                        if (val) {
+                            if (val.startsWith('//')) $(el).attr(attr, 'https:' + val);
+                            else if (val.startsWith('/') && !val.startsWith('//')) $(el).attr(attr, domainOrigin + val);
+                        }
+                    });
+                });
+
+                ws.send(JSON.stringify({
+                    type: 'STAGE_1_LAYOUT',
+                    url: baseUrl,
+                    html: $.html()
+                }));
+
+                // 2. STAGE 2: Deep compile assets and hijack API frameworks
+                console.log(`Compiling dynamic background payloads...`);
+
+                // Convert styles
                 const cssPromises = [];
                 $('link[rel="stylesheet"], link[href$=".css"]').each((i, el) => {
-                    let href = $(el).attr('href');
+                    const href = $(el).attr('href');
                     if (href) {
-                        try {
-                            // FIXED: Force support for relative protocol paths (e.g. //scratch.mit.edu)
-                            if (href.startsWith('//')) href = 'https:' + href;
-                            const absoluteUrl = new URL(href, baseUrl).href;
-                            cssPromises.push(
-                                getAsText(absoluteUrl).then(cssText => {
-                                    $(el).replaceWith(`<style data-origin="${href}">${cssText}</style>`);
-                                })
-                            );
-                        } catch (e) {}
+                        cssPromises.push(
+                            getAsText(href).then(cssText => {
+                                $(el).replaceWith(`<style data-origin="${href}">${cssText}</style>`);
+                            })
+                        );
                     }
                 });
                 await Promise.all(cssPromises);
 
-                // Dispatch core layout instantly
-                ws.send(JSON.stringify({
-                    type: 'STAGE_1_LAYOUT',
-                    url: data.url,
-                    html: $.html()
-                }));
-
-                console.log(`Gathering background dependencies & data matrices...`);
-
-                // 2. INLINE ALL JAVASCRIPT
+                // Convert structural scripts
                 const scriptPromises = [];
                 $('script[src]').each((i, el) => {
-                    let src = $(el).attr('src');
+                    const src = $(el).attr('src');
                     if (src && !src.startsWith('data:')) {
-                        try {
-                            if (src.startsWith('//')) src = 'https:' + src;
-                            const absoluteUrl = new URL(src, baseUrl).href;
-                            scriptPromises.push(
-                                getAsText(absoluteUrl).then(jsText => {
-                                    $(el).replaceWith(`<script data-origin="${src}">${jsText}</script>`);
-                                })
-                            );
-                        } catch (e) {}
+                        scriptPromises.push(
+                            getAsText(src).then(jsText => {
+                                $(el).replaceWith(`<script data-origin="${src}">${jsText}</script>`);
+                            })
+                        );
                     }
                 });
                 await Promise.all(scriptPromises);
 
-                // 3. UNIVERSAL ATTRIBUTE PARSER: Extract images, projects, and thumbnails safely
+                // FIX 2: Intercept Scratch's API calls by pre-fetching the JSON metadata grid
+                if (baseUrl.includes('scratch.mit.edu')) {
+                    try {
+                        console.log("Pre-fetching Scratch Featured Projects API array...");
+                        const apiData = await getAsText('https://mit.edu');
+                        
+                        // Inject the API data directly into a background script block so Scratch reads it locally instead of making an online network call
+                        $('head').prepend(`
+                            <script>
+                                const oldFetch = window.fetch;
+                                window.fetch = async function(url, options) {
+                                    if (url.includes('proxy/featured')) {
+                                        return new Response('${apiData.replace(/'/g, "\\'")}', {
+                                            status: 200,
+                                            headers: { 'Content-Type': 'application/json' }
+                                        });
+                                    }
+                                    return oldFetch(url, options);
+                                };
+                            </script>
+                        `);
+                    } catch (apiErr) { console.log("API Pre-fetch bypassed."); }
+                }
+
+                // Convert images and thumbnails
                 const assetPromises = [];
                 $('*').each((i, el) => {
                     ['src', 'href', 'data-src'].forEach(attr => {
-                        let val = $(el).attr(attr);
+                        const val = $(el).attr(attr);
                         if (val && !val.startsWith('data:') && !val.startsWith('javascript:') && !val.startsWith('#')) {
-                            try {
-                                if (val.startsWith('//')) val = 'https:' + val;
-                                const absoluteUrl = new URL(val, baseUrl).href;
-                                assetPromises.push(
-                                    getAsBase64(absoluteUrl).then(dataUrl => {
-                                        if (dataUrl) $(el).attr(attr, dataUrl);
-                                    })
-                                );
-                            } catch (e) {}
+                            assetPromises.push(
+                                getAsBase64(val).then(dataUrl => {
+                                    if (dataUrl) $(el).attr(attr, dataUrl);
+                                })
+                            );
                         }
                     });
                 });
                 await Promise.all(assetPromises);
 
-                // Stream completed assets back to client memory
                 ws.send(JSON.stringify({
                     type: 'STAGE_2_ASSETS',
-                    url: data.url,
+                    url: baseUrl,
                     html: $.html()
                 }));
                 
-                console.log(`Universal bundle complete for ${data.url}`);
+                console.log(`Universal snapshot compiled for ${baseUrl}`);
             }
         } catch (err) {
-            ws.send(JSON.stringify({ type: 'ERROR', message: 'Asset streaming execution timeout.' }));
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Asset streaming error.' }));
         }
     });
 });
