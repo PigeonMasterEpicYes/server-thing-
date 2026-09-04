@@ -6,20 +6,27 @@ const { URL } = require('url');
 const port = process.env.PORT || 8080;
 const wss = new WebSocket.Server({ port });
 
-console.log(`Prisline Sandbox Multi-Tenant Object Compiler active on port ${port}`);
+console.log(`Identity-Masking Pre-Rendering Engine active on port ${port}`);
 
-// Downloads background files and isolates content scopes safely
 async function getAsBase64(targetUrl) {
     try {
-        const check = await axios.head(targetUrl, { timeout: 3000 });
+        const check = await axios.head(targetUrl);
         const contentType = check.headers['content-type'] || '';
         const contentLength = parseInt(check.headers['content-length'] || '0', 10);
 
-        if (contentType.includes('video') || contentType.includes('audio') || contentLength > 6000000) {
+        if (contentType.includes('video') || contentType.includes('audio') || contentLength > 10000000) {
             return null;
         }
 
-        const response = await axios.get(targetUrl, { responseType: 'arraybuffer', timeout: 5000 });
+        // Pass fake identity headers to sub-assets too so they don't block downloads
+        const response = await axios.get(targetUrl, { 
+            responseType: 'arraybuffer',
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9'
+            }
+        });
         const base64 = Buffer.from(response.data, 'binary').toString('base64');
         return `data:${contentType};base64,${base64}`;
     } catch (e) { return null; }
@@ -27,31 +34,39 @@ async function getAsBase64(targetUrl) {
 
 async function getAsText(targetUrl) {
     try {
-        const response = await axios.get(targetUrl, { timeout: 5000 });
+        const response = await axios.get(targetUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
         return typeof response.data === 'object' ? JSON.stringify(response.data) : response.data;
     } catch (e) { return ''; }
 }
 
 wss.on('connection', (ws) => {
-    // CRUCIAL REPAIR: Each connection channel maintains an isolated workspace tracking model
     ws.on('message', async (message) => {
         try {
             const data = JSON.parse(message);
             if (data.type === 'FETCH') {
-                console.log(`Pre-rendering tree nodes for: ${data.url}`);
+                console.log(`Compiling structural tree framework for: ${data.url}`);
                 const baseUrl = data.url;
                 const domainOrigin = new URL(baseUrl).origin;
 
-                // STAGE 1: Isolated Layout HTML Handshake
+                // STAGE 1: Fetch core HTML using a fake Chromebook identity browser profile
                 const response = await axios.get(baseUrl, {
-                    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-                    timeout: 8000
+                    headers: { 
+                        'User-Agent': 'Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Cache-Control': 'no-cache',
+                        'Pragma': 'no-cache',
+                        'Upgrade-Insecure-Requests': '1'
+                    }
                 });
                 
-                // FIXED: Initializing inside the event handler stops multi-site memory pollution entirely
                 let $ = cheerio.load(response.data);
 
-                // Convert relative layouts inside clean structural nodes
+                // Fix absolute paths cleanly across attributes
                 $('link, script, img, a').each((i, el) => {
                     ['src', 'href', 'data-src'].forEach(attr => {
                         let val = $(el).attr(attr);
@@ -62,16 +77,16 @@ wss.on('connection', (ws) => {
                     });
                 });
 
-                // Stream decoupled parent framework instantly
+                // Stream layout framework instantly
                 ws.send(JSON.stringify({
                     type: 'STAGE_1_LAYOUT',
                     url: baseUrl,
                     html: $.html()
                 }));
 
-                console.log(`Compiling isolated assets asynchronously for root target context...`);
+                console.log(`Gathering background dependencies & data matrices...`);
 
-                // Inline internal stylesheets
+                // Inline stylesheets
                 const cssPromises = [];
                 $('link[rel="stylesheet"], link[href$=".css"]').each((i, el) => {
                     const href = $(el).attr('href');
@@ -85,7 +100,7 @@ wss.on('connection', (ws) => {
                 });
                 await Promise.all(cssPromises);
 
-                // Inline functional scripting environments
+                // Inline javascript frameworks
                 const scriptPromises = [];
                 $('script[src]').each((i, el) => {
                     const src = $(el).attr('src');
@@ -99,7 +114,7 @@ wss.on('connection', (ws) => {
                 });
                 await Promise.all(scriptPromises);
 
-                // API HIJACK HOOK: Intercept Scratch API telemetry calls natively
+                // Hijack Scratch telemetry frameworks natively
                 if (baseUrl.includes('scratch.mit.edu')) {
                     try {
                         console.log("Pre-fetching Scratch Featured Projects API array safely...");
@@ -133,7 +148,7 @@ wss.on('connection', (ws) => {
                     } catch (apiErr) { console.log("API Pre-fetch bypassed safely."); }
                 }
 
-                // Inline standard graphics, media grids, vector lines, and configurations
+                // Inline standard background multimedia layout assets
                 const assetPromises = [];
                 $('*').each((i, el) => {
                     ['src', 'href', 'data-src'].forEach(attr => {
@@ -149,17 +164,16 @@ wss.on('connection', (ws) => {
                 });
                 await Promise.all(assetPromises);
 
-                // Stream clean standalone bundle downstream
                 ws.send(JSON.stringify({
                     type: 'STAGE_2_ASSETS',
                     url: baseUrl,
                     html: $.html()
                 }));
                 
-                console.log(`Clean single tenant process finished for: ${baseUrl}`);
+                console.log(`Universal snapshot compiled cleanly for ${baseUrl}`);
             }
         } catch (err) {
-            ws.send(JSON.stringify({ type: 'ERROR', message: 'Asset streaming execution timeout.' }));
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Asset streaming error.' }));
         }
     });
 });
